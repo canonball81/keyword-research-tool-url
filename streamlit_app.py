@@ -9,9 +9,9 @@ from nltk.util import ngrams
 
 nltk.download('stopwords')
 
-st.title("📝 Long-Tail Keyword Extractor from Multiple URLs")
+st.title("📝 Long-Tail Keyword Extractor from Multiple URLs (with Real-Time Logging)")
 
-# Text area for multiple URLs
+# Input for URLs
 url_input = st.text_area("Paste one or more URLs (one per line):", height=200)
 
 def extract_visible_text(url):
@@ -21,9 +21,10 @@ def extract_visible_text(url):
         for script in soup(["script", "style"]):
             script.extract()
         text = soup.get_text(separator=' ')
-        return re.sub(r'\s+', ' ', text).strip().lower()
-    except Exception:
-        return ""
+        cleaned_text = re.sub(r'\s+', ' ', text).strip().lower()
+        return cleaned_text
+    except Exception as e:
+        return f"__ERROR__::{str(e)}"
 
 def extract_ngrams(text, stop_words, n_range=(2, 5)):
     words = re.findall(r'\b[a-z]{3,}\b', text)
@@ -40,18 +41,28 @@ if st.button("🔍 Extract Keywords"):
     else:
         stop_words = set(stopwords.words('english'))
         all_phrases = []
+        log_box = st.empty()
         progress = st.progress(0)
-        log = st.empty()
+        logs = []
 
         for i, url in enumerate(urls):
-            log.markdown(f"Processing: `{url}`")
             text = extract_visible_text(url)
-            if len(text) > 100:
-                phrases = extract_ngrams(text, stop_words)
-                all_phrases += phrases
+            if text.startswith("__ERROR__::"):
+                logs.append(f"❌ `{url}` — Error: {text.replace('__ERROR__::', '')}")
             else:
-                st.info(f"⚠️ Skipped {url} — too little content.")
-            progress.progress((i+1) / len(urls))
+                char_count = len(text)
+                preview = text[:250] + "..." if char_count > 250 else text
+                logs.append(f"✅ `{url}` — {char_count} chars\n\n**Preview:**\n```\n{preview}\n```")
+
+                if char_count > 30:
+                    phrases = extract_ngrams(text, stop_words)
+                    all_phrases += phrases
+                else:
+                    logs.append(f"⚠️ `{url}` — Skipped: Not enough text")
+
+            # Real-time log viewer (only show last 10 logs to keep it clean)
+            log_box.markdown("___\n\n".join(logs[-10:]))
+            progress.progress((i + 1) / len(urls))
 
         if all_phrases:
             st.subheader("📈 Top Long-Tail Keywords:")
