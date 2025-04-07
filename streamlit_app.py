@@ -6,44 +6,62 @@ import re
 import nltk
 from nltk.corpus import stopwords
 from nltk.util import ngrams
+import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 
 nltk.download('stopwords')
 
-st.title("🔍 Long-Tail Keyword Extractor (2–5 words)")
+st.title("🕸️ Long-Tail Keyword Extractor from Sitemap.xml")
 
-# Input URL
-url = st.text_input("Enter a website URL (e.g. https://example.com)")
+# Input for sitemap.xml
+sitemap_url = st.text_input("Enter sitemap.xml URL (e.g. https://www.affinda.com/sitemap.xml)")
 
-if url:
+def get_urls_from_sitemap(sitemap_url):
     try:
-        # Fetch page content
+        response = requests.get(sitemap_url)
+        root = ET.fromstring(response.content)
+        namespace = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+        urls = [elem.text for elem in root.findall('.//ns:loc', namespace)]
+        return urls
+    except Exception as e:
+        st.error(f"Error reading sitemap: {e}")
+        return []
+
+def extract_visible_text_from_url(url):
+    try:
         response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
+        for script in soup(['script', 'style']):
             script.extract()
-
-        # Get visible text
         text = soup.get_text(separator=' ')
-        text = re.sub(r'\s+', ' ', text).strip().lower()
+        return re.sub(r'\s+', ' ', text).strip().lower()
+    except Exception:
+        return ""
 
-        # Tokenize and filter stopwords
-        words = re.findall(r'\b[a-z]{3,}\b', text)
+def extract_ngrams(text, stop_words, n_range=(2,5)):
+    words = re.findall(r'\b[a-z]{3,}\b', text)
+    filtered = [w for w in words if w not in stop_words]
+    all_ngrams = []
+    for n in range(n_range[0], n_range[1]+1):
+        all_ngrams += [' '.join(gram) for gram in ngrams(filtered, n)]
+    return all_ngrams
+
+if sitemap_url:
+    urls = get_urls_from_sitemap(sitemap_url)
+    
+    if urls:
+        st.write(f"✅ Found {len(urls)} URLs in the sitemap.")
         stop_words = set(stopwords.words('english'))
-        filtered_words = [word for word in words if word not in stop_words]
+        all_phrases = []
 
-        # Create 2- to 5-word n-grams
-        all_ngrams = []
-        for n in range(2, 6):
-            all_ngrams += [' '.join(gram) for gram in ngrams(filtered_words, n)]
+        progress = st.progress(0)
+        for i, url in enumerate(urls):
+            text = extract_visible_text_from_url(url)
+            all_phrases += extract_ngrams(text, stop_words)
+            progress.progress((i+1)/len(urls))
 
-        # Count and display most common n-grams
-        ngram_freq = Counter(all_ngrams).most_common(25)
-
-        st.subheader("🧠 Top Long-Tail Keywords (2–5 words):")
-        for phrase, freq in ngram_freq:
+        # Count long-tail keyword frequencies
+        phrase_counts = Counter(all_phrases).most_common(50)
+        st.subheader("📈 Top Long-Tail Keywords (2–5 words):")
+        for phrase, freq in phrase_counts:
             st.write(f"{phrase} — {freq} times")
-
-    except Exception as e:
-        st.error(f"Error: {e}")
